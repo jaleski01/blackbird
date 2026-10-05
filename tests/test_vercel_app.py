@@ -197,9 +197,17 @@ class VercelRuntimeSafetyTests(unittest.TestCase):
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["result"]["summary"], "Synthetic test summary")
         self.assertEqual(request.call_args.kwargs["headers"]["User-Agent"], "blackbird-cli")
+        self.assertEqual(
+            request.call_args.kwargs["data"],
+            json.dumps({"prompt": "Site One, Site Two, Site Three"}),
+        )
+        self.assertNotIn("json", request.call_args.kwargs)
 
     def test_ai_analysis_logs_safe_upstream_status(self):
-        response = SimpleNamespace(status_code=429)
+        response = SimpleNamespace(
+            status_code=429,
+            headers={"x-request-id": "safe-request-id_123"},
+        )
         config = SimpleNamespace(suppress_sensitive_logs=True)
         found_accounts = [{"name": "Site One"}, {"name": "Site Two"}, {"name": "Site Three"}]
 
@@ -215,7 +223,33 @@ class VercelRuntimeSafetyTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "error")
         self.assertIn("HTTP 429", result["message"])
-        self.assertIn("upstream_http_status=429", "\n".join(captured.output))
+        log_output = "\n".join(captured.output)
+        self.assertIn("upstream_http_status=429", log_output)
+        self.assertIn("upstream_request_id=safe-request-id_123", log_output)
+        self.assertNotIn("frames=unknown", log_output)
+
+    def test_ai_analysis_does_not_log_malformed_upstream_request_id(self):
+        response = SimpleNamespace(
+            status_code=500,
+            headers={"x-request-id": "private value\nforged log entry"},
+        )
+        config = SimpleNamespace(suppress_sensitive_logs=True)
+        found_accounts = [{"name": "Site One"}, {"name": "Site Two"}, {"name": "Site Three"}]
+
+        with patch("src.vercel_app.get_ai_base_url", return_value="https://ai.blackbird.run"):
+            with patch("src.vercel_app.requests.post", return_value=response):
+                with self.assertLogs(level=logging.ERROR) as captured:
+                    result = _analyze_found_accounts(
+                        found_accounts,
+                        "synthetic-test-key",
+                        config,
+                        remaining_seconds=10,
+                    )
+
+        self.assertEqual(result["status"], "error")
+        log_output = "\n".join(captured.output)
+        self.assertIn("upstream_request_id=unavailable", log_output)
+        self.assertNotIn("private value", log_output)
 
     def test_search_streams_exports_without_persisting_them(self):
         class FakeHandler:

@@ -4,6 +4,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import socket
 import tempfile
@@ -356,21 +357,25 @@ def _analyze_found_accounts(found_accounts, api_key, config, remaining_seconds):
                 "User-Agent": "blackbird-cli",
                 "x-api-key": api_key,
             },
-            json={"prompt": ", ".join(account["name"] for account in found_accounts)},
+            data=json.dumps(
+                {"prompt": ", ".join(account["name"] for account in found_accounts)}
+            ),
             timeout=min(AI_REQUEST_TIMEOUT_SECONDS, max(1, int(remaining_seconds))),
             verify=True,
         )
         if response.status_code != 200:
-            from modules.utils.log import logError
-
-            logging.error(
-                "AI analysis failed (upstream_http_status=%d)",
-                response.status_code,
+            request_id = getattr(response, "headers", {}).get("x-request-id", "")
+            safe_request_id = (
+                request_id
+                if isinstance(request_id, str)
+                and len(request_id) <= 128
+                and re.fullmatch(r"[A-Za-z0-9._:-]+", request_id)
+                else "unavailable"
             )
-            logError(
-                RuntimeError(f"AI service returned HTTP {response.status_code}"),
-                "AI analysis failed",
-                config,
+            logging.error(
+                "AI analysis failed (upstream_http_status=%d; upstream_request_id=%s)",
+                response.status_code,
+                safe_request_id,
             )
             return {
                 "status": "error",
