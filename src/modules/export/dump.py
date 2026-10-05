@@ -5,20 +5,22 @@ import json
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ""))
 
 from utils.log import logError
+from ..export.file_operations import safeIdentifier
 
 
 # Dump HTML data to a .html file
 def dumpContent(path, site, response, config):
 
-    siteName = site["name"].replace(" ", "_")
+    siteName = safeIdentifier(site["name"])
     content = response["content"]
     extension = "txt"
 
-    if response["headers"]["Content-Type"]:
-        if "application/json" in response["headers"]["Content-Type"]:
+    content_type = response["headers"].get("Content-Type", "")
+    if content_type:
+        if "application/json" in content_type:
             extension = "json"
             content = response["json"]
-        elif "text/html" in response["headers"]["Content-Type"]:
+        elif "text/html" in content_type:
             extension = "html"
             content = response["content"]
 

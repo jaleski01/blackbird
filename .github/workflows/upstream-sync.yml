@@ -1,0 +1,61 @@
+name: Upstream sync
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository_owner == 'jaleski01'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the fork
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the original repository
+        id: upstream
+        run: |
+          git fetch --no-tags https://github.com/antoniaci/blackbird.git main:refs/remotes/upstream/main
+          if git merge-base --is-ancestor refs/remotes/upstream/main HEAD; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream changes
+        if: steps.upstream.outputs.current == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge --no-edit --no-ff refs/remotes/upstream/main || {
+            git merge --abort
+            echo "Upstream changes conflict with the fork adaptations; main was not updated."
+            exit 1
+          }
+
+      - name: Install project dependencies
+        if: steps.upstream.outputs.current == 'false'
+        run: python3.12 -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Validate merged revision
+        if: steps.upstream.outputs.current == 'false'
+        run: |
+          python3.12 -m compileall -q api src
+          python3.12 -m unittest discover -s tests -p 'test_vercel_app.py'
+          python3.12 -m unittest discover -s tests -p 'test_vercel_api.py'
+          python3.12 -m unittest discover -s tests -p 'test_core.py'
+          python3.12 -m unittest discover -s tests -p 'test_export.py'
+
+      - name: Push the validated revision
+        if: steps.upstream.outputs.current == 'false'
+        run: git push origin HEAD:main

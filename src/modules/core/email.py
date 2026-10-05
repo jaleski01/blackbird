@@ -1,10 +1,9 @@
 import os
-from pathlib import Path
-from rich.markup import escape
 import time
 import aiohttp
 import asyncio
 import sys
+from urllib.parse import quote
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -17,6 +16,7 @@ from ..whatsmyname.list_operations import readList
 from ..utils.input import processInput
 from ..utils.log import logError
 from ..export.dump import dumpContent
+from ..export.file_operations import safeIdentifier
 from ..utils.precheck import perform_pre_check
 
 
@@ -73,7 +73,8 @@ async def checkSite(
                         # Save response content to a .HTML file
                         if config.dump:
                             path = os.path.join(
-                                config.saveDirectory, f"dump_{config.currentEmail}"
+                                config.saveDirectory,
+                                f"dump_{safeIdentifier(config.currentEmail)}",
                             )
 
                             result = dumpContent(path, site, response, config)
@@ -94,37 +95,36 @@ async def checkSite(
 
 
 # Control survey on list sites
-from rich.text import Text
-from rich.live import Live
+from ..utils.search_runner import collect_results
+from ..utils.public_resolver import PublicNetworkResolver
 
 async def fetchResults(email, config):
-    data = readList("email", config)
     originalEmail = email
-    async with aiohttp.ClientSession() as session:
+    connector = (
+        aiohttp.TCPConnector(resolver=PublicNetworkResolver())
+        if getattr(config, "public_network_only", False)
+        else None
+    )
+    async with aiohttp.ClientSession(connector=connector) as session:
         tasks = []
         semaphore = asyncio.Semaphore(config.max_concurrent_requests)
         total_sites = len(config.email_sites)
-        completed = 0
-        results = []
-
-        def render():
-            percent = int((completed / total_sites) * 100)
-            return Text.from_markup(
-                f"🛰️  Enumerating accounts with email [cyan1]\"{originalEmail}\"[/cyan1] — [green1]{percent}%[/green1] ({completed}/{total_sites})"
-            )
-
         async def wrappedCheck(site):
-            nonlocal completed
             if site["input_operation"] is not None:
                 email_processed = processInput(originalEmail, site["input_operation"], config)
             else:
                 email_processed = originalEmail
 
-            url = site["uri_check"].replace("{account}", email_processed)
+            url_account = (
+                quote(email_processed, safe="")
+                if getattr(config, "encode_identifier_urls", False)
+                else email_processed
+            )
+            url = site["uri_check"].replace("{account}", url_account)
             data = site["data"].replace("{account}", email_processed) if site["data"] else None
             headers = site["headers"] if site["headers"] else None
 
-            result = await checkSite(
+            return await checkSite(
                 site=site,
                 method=site["method"],
                 url=url,
@@ -134,18 +134,15 @@ async def fetchResults(email, config):
                 data=data,
                 headers=headers,
             )
-            completed += 1
-            return result
 
         tasks = [wrappedCheck(site) for site in config.email_sites]
-
-        with Live(render(), refresh_per_second=10, console=config.console) as live:
-            for coro in asyncio.as_completed(tasks):
-                result = await coro
-                results.append(result)
-                live.update(render())
-
-        return {"results": results, "email": originalEmail}
+        search = await collect_results(
+            tasks,
+            config,
+            total_sites,
+            f'Enumerating accounts with email [cyan1]"{originalEmail}"[/cyan1]',
+        )
+        return {**search, "email": originalEmail}
 
 
 
@@ -156,9 +153,11 @@ def verifyEmail(email, config):
     sitesToSearch = data["sites"]
     config.email_sites = applyFilters(sitesToSearch, config)
 
-    start_time = time.time()
+    start_time = time.monotonic()
     results = asyncio.run(fetchResults(email, config))
-    end_time = time.time()
+    end_time = time.monotonic()
+    config.lastSearchResults = results["results"]
+    config.searchPartial = results["partial"]
 
     config.console.print(
         f":chequered_flag: Check completed in {round(end_time - start_time, 1)} seconds ({len(results['results'])} sites)"

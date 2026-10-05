@@ -6,6 +6,7 @@ sys.path.append(
 )
 
 from ..utils.http_client import do_sync_request
+from ..export.file_operations import safeIdentifier
 import re
 import os
 
@@ -34,17 +35,17 @@ def download_image(metadataReturn, site, config):
     if config.currentUser:
         path = os.path.join(
             config.saveDirectory,
-            f"images_{config.currentUser}",
+            f"images_{safeIdentifier(config.currentUser)}",
             f"{site}_image.jpg",
         )
     elif config.currentEmail:
         path = os.path.join(
             config.saveDirectory,
-            f"images_{config.currentEmail}",
+            f"images_{safeIdentifier(config.currentEmail)}",
             f"{site}_image.jpg",
         )
 
-    if "image" in response.headers["Content-Type"]:
+    if response is not None and "image" in response.headers.get("Content-Type", ""):
         with open(path, "wb") as file:
             file.write(response.content)
             metadataReturn["downloaded"] = True
@@ -92,7 +93,7 @@ def extractMetadata(metadata, response, site, config):
                 config.console.print(
                     f"      :right_arrow:  {metadataReturn['name']}: {metadataReturn['value']}"
                 )
-                if config.pdf:
+                if config.pdf and not getattr(config, "disable_remote_images", False):
                     metadataReturn = download_image(metadataReturn, site, config)
             extractedMetadata.append(metadataReturn)
 

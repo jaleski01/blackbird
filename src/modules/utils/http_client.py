@@ -7,9 +7,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
 from log import logError
 
-requests.packages.urllib3.disable_warnings()
-
-
 # Perform a Sync Request and return response details
 def do_sync_request(method, url, config, data=None, customHeaders=None, cookies=None):
     headers = {"User-Agent": config.userAgent}
@@ -20,7 +17,7 @@ def do_sync_request(method, url, config, data=None, customHeaders=None, cookies=
         "method": method,
         "url": url,
         "timeout": config.timeout,
-        "verify": False,
+        "verify": True,
         "headers": headers,
         "data": data,
         "cookies": cookies,
@@ -56,7 +53,6 @@ async def do_async_request(method, url, session, config, data=None, customHeader
             proxy=proxy,
             timeout=config.timeout,
             allow_redirects=True,
-            ssl=False,
             data=data,
             headers=headers,
             max_redirects=10,
@@ -89,6 +85,6 @@ async def do_async_request(method, url, session, config, data=None, customHeader
         return responseData
     except Exception as e:
         if config.verbose:
-            config.console.print(f"  ❌ Error in Async HTTP Request [{method}] {url}")
-        logError(e, f"Error in Async HTTP Request [{method}] {url}", config)
+            config.console.print(f"  ❌ Error in Async HTTP Request [{method}]")
+        logError(e, f"Error in Async HTTP Request [{method}]", config)
         return None

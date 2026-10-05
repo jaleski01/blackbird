@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#101311" />
+    <meta
+      name="description"
+      content="Blackbird username and email account search terminal."
+    />
+    <title>Blackbird · Search terminal</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="terminal" aria-labelledby="app-title">
+        <header class="terminal-bar">
+          <div class="window-controls" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <p>BLACKBIRD <span>/</span> SEARCH TERMINAL</p>
+          <span class="build-mark">WEB · 01</span>
+        </header>
+
+        <div class="terminal-content">
+          <header class="intro">
+            <pre class="bird-mark" aria-label="Blackbird logo">
+    ▄▄         ▄▄
+   ▟██▙       ▟██▙
+   ▜███▙     ▟███▛
+    ▜████▄▄▄████▛
+     ▀█████████▀
+       ▀█████▀
+         ▀█▀</pre>
+            <div>
+              <p class="eyebrow">OPEN-SOURCE ACCOUNT RECONNAISSANCE</p>
+              <h1 id="app-title">Search the public footprint.</h1>
+              <p class="intro-copy">
+                Check usernames or email addresses against the Blackbird site lists.
+              </p>
+            </div>
+          </header>
+
+          <form id="search-form" novalidate>
+            <div class="mode-switch" role="group" aria-label="Search type">
+              <button class="mode-button is-active" type="button" data-mode="username" aria-pressed="true">
+                <span class="mode-prefix">01</span> Username
+              </button>
+              <button class="mode-button" type="button" data-mode="email" aria-pressed="false">
+                <span class="mode-prefix">02</span> Email
+              </button>
+            </div>
+
+            <div class="input-heading">
+              <label for="identifiers" id="identifier-label">USERNAME / DISPLAY NAME</label>
+              <input id="input-file" class="file-input" type="file" accept=".txt,text/plain" />
+              <label class="file-button" for="input-file">LOAD .TXT FILE</label>
+            </div>
+            <textarea
+              id="identifiers"
+              name="identifiers"
+              rows="3"
+              maxlength="4000"
+              spellcheck="false"
+              autocomplete="off"
+              aria-describedby="identifier-help"
+              placeholder="jane.doe&#10;janedoe"
+              required
+            ></textarea>
+            <div class="field-foot">
+              <p id="identifier-help">One value per line · up to 25 values per search.</p>
+              <span id="input-count">0 VALUES</span>
+            </div>
+
+            <div class="option-grid" aria-label="Search options">
+              <label class="check-option" id="permute-option">
+                <input type="checkbox" id="permute" />
+                <span class="check-mark" aria-hidden="true"></span>
+                <span>Permute words</span>
+              </label>
+              <label class="check-option" id="permute-all-option">
+                <input type="checkbox" id="permute-all" />
+                <span class="check-mark" aria-hidden="true"></span>
+                <span>All permutations</span>
+              </label>
+              <label class="check-option">
+                <input type="checkbox" id="exclude-nsfw" />
+                <span class="check-mark" aria-hidden="true"></span>
+                <span>Exclude NSFW sites</span>
+              </label>
+              <label class="check-option">
+                <input type="checkbox" id="verbose" checked />
+                <span class="check-mark" aria-hidden="true"></span>
+                <span>Show every site</span>
+              </label>
+            </div>
+
+            <details class="advanced-options">
+              <summary>ADVANCED OPTIONS <span>FILTER · NETWORK · EXPORT</span></summary>
+              <div class="advanced-grid">
+                <label class="text-field">
+                  <span>SITE FILTER</span>
+                  <input id="filter" type="text" maxlength="200" placeholder="cat=social" />
+                </label>
+                <label class="text-field">
+                  <span>PROXY URL</span>
+                  <input id="proxy" type="url" maxlength="2048" placeholder="http://proxy.example:8080" />
+                </label>
+                <label class="text-field compact-field">
+                  <span>TIMEOUT / SITE</span>
+                  <input id="timeout" type="number" min="1" max="60" value="30" />
+                </label>
+                <label class="text-field compact-field">
+                  <span>CONCURRENCY</span>
+                  <input id="concurrency" type="number" min="1" max="30" value="30" />
+                </label>
+                <label class="check-option">
+                  <input type="checkbox" id="no-update" />
+                  <span class="check-mark" aria-hidden="true"></span>
+                  <span>Use bundled site list</span>
+                </label>
+                <label class="check-option">
+                  <input type="checkbox" id="dump" />
+                  <span class="check-mark" aria-hidden="true"></span>
+                  <span>Save found page dumps</span>
+                </label>
+                <fieldset class="export-options">
+                  <legend>DOWNLOAD RESULTS AS</legend>
+                  <label><input type="checkbox" id="export-csv" /> CSV</label>
+                  <label><input type="checkbox" id="export-json" /> JSON</label>
+                  <label><input type="checkbox" id="export-pdf" /> PDF</label>
+                </fieldset>
+              </div>
+            </details>
+
+            <div class="privacy-note">
+              <span aria-hidden="true">!</span>
+              <p>
+                Searches send each identifier to the public sites being checked. Results and
+                exports stay in this browser after the request; the server uses temporary files.
+              </p>
+            </div>
+
+            <section class="ai-row" aria-labelledby="ai-title">
+              <div>
+                <h2 id="ai-title">Optional AI summary</h2>
+                <p id="ai-state">AI key is not enabled in this browser.</p>
+              </div>
+              <button class="quiet-button" id="enable-ai" type="button" disabled>ENABLE AI</button>
+            </section>
+            <label class="consent-option">
+              <input id="ai-consent" type="checkbox" />
+              <span>
+                I consent to sending found site names (not my search identifier) to Blackbird AI
+                for analysis.
+              </span>
+            </label>
+            <label class="consent-option setup-consent">
+              <input id="setup-consent" type="checkbox" />
+              <span>
+                I consent to contacting the AI service to create a key associated with my IP address
+                and keep it in this browser.
+              </span>
+            </label>
+
+            <div class="action-row">
+              <button id="search-button" class="run-button" type="submit">
+                <span class="run-symbol" aria-hidden="true">▶</span>
+                <span>Run search</span>
+                <kbd>CTRL+ENTER</kbd>
+              </button>
+              <button id="stop-button" class="stop-button" type="button" disabled>
+                STOP SEARCH
+              </button>
+              <span class="budget-label">MAX RUN TIME <strong>270s</strong></span>
+            </div>
+          </form>
+
+          <section class="output-panel" aria-labelledby="output-title">
+            <div class="output-heading">
+              <h2 id="output-title">LIVE OUTPUT</h2>
+              <span id="connection-status" class="connection-status">
+                <span></span> READY
+              </span>
+            </div>
+            <div
+              id="output"
+              class="output"
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions text"
+              tabindex="0"
+            >
+              <p class="output-line muted"><span class="prompt">$</span> Waiting for input.</p>
+            </div>
+            <div id="downloads" class="downloads" aria-live="polite"></div>
+            <div id="ai-result" class="ai-result" hidden></div>
+          </section>
+
+          <footer class="terminal-footer">
+            <span>BLACKBIRD · USERNAME &amp; EMAIL SEARCH</span>
+            <span>DATA: <a href="https://github.com/WebBreacher/WhatsMyName" target="_blank" rel="noopener noreferrer">WHATSMYNAME · CC BY-SA 4.0</a></span>
+          </footer>
+        </div>
+      </section>
+      <p class="page-caption">A focused web terminal for the original Blackbird search engine.</p>
+    </main>
+  </body>
+</html>

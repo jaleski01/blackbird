@@ -26,7 +26,7 @@ config.datePretty = datetime.now().strftime("%B %d, %Y")
 
 
 class TestExportToPDF(unittest.TestCase):
-    config.currentEmail = "john@gmail.com"
+    config.currentEmail = "blackbird-test@example.invalid"
     config.pdf = True
     config.csv = False
     createSaveDirectory(config)
@@ -43,7 +43,7 @@ class TestExportToPDF(unittest.TestCase):
 
 
 class TestExportToCSV(unittest.TestCase):
-    config.currentUser = "p1ngul1n0"
+    config.currentUser = "blackbird-test-user"
     config.pdf = False
     config.csv = True
     createSaveDirectory(config)

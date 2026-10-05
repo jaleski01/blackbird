@@ -12,7 +12,7 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 )
 
-from ..export.file_operations import generateName
+from ..export.file_operations import generateName, safeIdentifier
 
 
 from ..utils.log import logError
@@ -246,11 +246,19 @@ def saveToPdf(foundAccounts, resultType, config):
                     relative=1,
                 )
                 try:
-                    if result["metadata"]:
+                    metadata_entries = []
+                    for entry in result.get("metadata") or []:
+                        if isinstance(entry, list):
+                            metadata_entries.extend(
+                                item for item in entry if isinstance(item, dict)
+                            )
+                        elif isinstance(entry, dict):
+                            metadata_entries.append(entry)
+                    if metadata_entries:
                         initialWidth = y_position - 10
                         y_position -= 25
                         canva.setFont(config.FONT_NAME_REGULAR, 7)
-                        for data in result["metadata"]:
+                        for data in metadata_entries:
                             if data["type"] == "String":
                                 metadataWidth = stringWidth(
                                     f"{data['name']}:  {data['value']}",
@@ -321,14 +329,14 @@ def saveToPdf(foundAccounts, resultType, config):
                                     canva.drawString(103, y_position, value)
                                     y_position -= 15
                             elif data["type"] == "Image":
-                                if data["downloaded"]:
+                                if data.get("downloaded"):
                                     try:
                                         y_position -= 25
                                         canva.drawImage(
                                             os.path.join(
                                                 config.saveDirectory,
-                                                f"images_{identifier}",
-                                                f"{result['name']}_image.jpg",
+                                                f"images_{safeIdentifier(identifier)}",
+                                                f"{safeIdentifier(result['name'])}_image.jpg",
                                             ),
                                             90,
                                             y_position,
@@ -336,14 +344,14 @@ def saveToPdf(foundAccounts, resultType, config):
                                             height=35,
                                         )
                                         y_position -= 15
-                                    except:
-                                        pass
+                                    except OSError as error:
+                                        logError(error, "Could not render an image in the PDF", config)
                         endWidth = y_position
                         canva.setStrokeColor("#CE0000")
                         canva.line(85, initialWidth, 85, endWidth)
                     y_position -= 25
-                except Exception as e:
-                    print(e)
+                except (KeyError, TypeError, ValueError) as error:
+                    logError(error, "Could not render metadata in the PDF", config)
         canva.save()
         config.console.print(f"💾  Saved results to '[cyan1]{fileName}[/cyan1]'")
         return True

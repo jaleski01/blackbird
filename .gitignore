@@ -253,7 +253,9 @@ $RECYCLE.BIN/
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 
 envs.sh
+.env
 .env-*
+!.env.example
 .vscode
 .trunk
 results/
@@ -261,6 +263,7 @@ results/
 /Scripts
 pyvenv.cfg
 wmn-data.json
+!data/wmn-data.json
 *.csv
 *.pdf
 logs/*.log
@@ -270,3 +273,4 @@ logs/blackbird.log
 logs/blackbird.log
 /logs
 .ai_key.json
+/.vercel/

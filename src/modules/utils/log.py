@@ -1,7 +1,21 @@
 import logging
 import traceback
+from pathlib import Path
 
 def logError(e, message, config):
+    if getattr(config, "suppress_sensitive_logs", False):
+        frames = traceback.extract_tb(e.__traceback__)
+        locations = " > ".join(
+            f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}"
+            for frame in frames[-8:]
+        ) or "unknown"
+        logging.error(
+            "Blackbird operation failed (%s; frames=%s)",
+            type(e).__name__,
+            locations,
+        )
+        return
+
     if str(e) != "":
         error = str(e)
     else:

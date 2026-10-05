@@ -3,11 +3,7 @@ import os
 import time
 import aiohttp
 import asyncio
-
-from rich.live import Live
-from rich.console import Console
-from rich.text import Text
-from rich.panel import Panel
+from urllib.parse import quote
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
@@ -18,7 +14,10 @@ from ..utils.parse import extractMetadata, remove_duplicates
 from ..utils.filter import filterFoundAccounts, applyFilters
 from ..utils.http_client import do_async_request
 from ..utils.log import logError
+from ..utils.search_runner import collect_results
+from ..utils.public_resolver import PublicNetworkResolver
 from ..export.dump import dumpContent
+from ..export.file_operations import safeIdentifier
 from ..sites.instagram import get_instagram_account_info
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -95,7 +94,8 @@ async def checkSite(
                         # Save response content to a .HTML file
                         if config.dump:
                             path = os.path.join(
-                                config.saveDirectory, f"dump_{config.currentUser}"
+                                config.saveDirectory,
+                                f"dump_{safeIdentifier(config.currentUser)}",
                             )
 
                             result = dumpContent(path, site, response, config)
@@ -115,48 +115,39 @@ async def checkSite(
             return returnData
 
 
-from rich.live import Live
-from rich.console import Group
-from rich.text import Text
-
 async def fetchResults(username, config):
-    async with aiohttp.ClientSession() as session:
+    connector = (
+        aiohttp.TCPConnector(resolver=PublicNetworkResolver())
+        if getattr(config, "public_network_only", False)
+        else None
+    )
+    async with aiohttp.ClientSession(connector=connector) as session:
         semaphore = asyncio.Semaphore(config.max_concurrent_requests)
         total_sites = len(config.username_sites)
-        completed = 0
-        results = []
-
-        def render():
-            percent = int((completed / total_sites) * 100)
-            return Text.from_markup(
-                f"🛰️  Enumerating accounts with username [cyan1]\"{username}\"[/cyan1] — [green1]{percent}%[/green1] ({completed}/{total_sites})"
-            )
 
         async def wrappedCheck(site):
-            nonlocal completed
-            result = await checkSite(
+            account = (
+                quote(username, safe="")
+                if getattr(config, "encode_identifier_urls", False)
+                else username
+            )
+            return await checkSite(
                 site=site,
                 method="GET",
-                url=site["uri_check"].replace("{account}", username),
+                url=site["uri_check"].replace("{account}", account),
                 session=session,
                 semaphore=semaphore,
                 config=config,
             )
-            completed += 1
-            return result
 
         tasks = [wrappedCheck(site) for site in config.username_sites]
-
-        with Live(render(), refresh_per_second=10, console=config.console) as live:
-            for coro in asyncio.as_completed(tasks):
-                result = await coro
-                results.append(result)
-                live.update(render())
-
-        return {"results": results, "username": username}
-
-
-
+        search = await collect_results(
+            tasks,
+            config,
+            total_sites,
+            f'Enumerating accounts with username [cyan1]"{username}"[/cyan1]',
+        )
+        return {**search, "username": username}
 
 # Start username check and presents results to user
 def verifyUsername(username, config, sitesToSearch=None, metadata_params=None):
@@ -169,9 +160,11 @@ def verifyUsername(username, config, sitesToSearch=None, metadata_params=None):
 
     config.username_sites = applyFilters(sitesToSearch, config)
 
-    start_time = time.time()
+    start_time = time.monotonic()
     results = asyncio.run(fetchResults(username, config))
-    end_time = time.time()
+    end_time = time.monotonic()
+    config.lastSearchResults = results["results"]
+    config.searchPartial = results["partial"]
 
     config.console.print(
         f":chequered_flag: Check completed in {round(end_time - start_time, 1)} seconds"
