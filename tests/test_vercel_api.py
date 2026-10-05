@@ -38,11 +38,83 @@ def call_wsgi(path, operation="", method="GET", payload=None, cookie=None):
 
 
 class VercelApiTests(unittest.TestCase):
+    def test_favicon_is_linked_and_is_a_png_asset(self):
+        public_directory = PROJECT_DIRECTORY / "public"
+        favicon = (public_directory / "favicon.png").read_bytes()
+        html = (public_directory / "index.html").read_text(encoding="utf-8")
+
+        self.assertTrue(favicon.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertIn('href="/favicon.png"', html)
+
     def test_ai_key_status_is_json_and_does_not_require_api_url(self):
         response, body = call_wsgi("/api", operation="ai-key")
 
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(json.loads(body), {"enabled": False})
+
+    def test_ai_key_uses_the_original_service_envelope_and_user_agent(self):
+        upstream_response = type(
+            "Response",
+            (),
+            {
+                "status_code": 429,
+                "json": lambda self: {
+                    "success": False,
+                    "status": 200,
+                    "data": {"api_key": "synthetic-test-key"},
+                },
+            },
+        )()
+
+        with patch("src.vercel_app.get_ai_base_url", return_value="https://ai.blackbird.run"):
+            with patch("src.vercel_app.requests.get", return_value=upstream_response) as request:
+                response, body = call_wsgi(
+                    "/api",
+                    operation="ai-key",
+                    method="POST",
+                    payload={"consent": True},
+                )
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(json.loads(body), {"enabled": True})
+        self.assertEqual(request.call_args.kwargs["headers"], {"User-Agent": "blackbird-cli"})
+        self.assertIn("blackbird_ai_key=synthetic-test-key", response["headers"]["Set-Cookie"])
+
+    def test_ai_key_failure_returns_upstream_status_without_logging_response_body(self):
+        upstream_response = type(
+            "Response",
+            (),
+            {
+                "status_code": 429,
+                "json": lambda self: {
+                    "success": False,
+                    "status": 429,
+                    "data": {"error": "private test value"},
+                },
+            },
+        )()
+
+        with patch("src.vercel_app.get_ai_base_url", return_value="https://ai.blackbird.run"):
+            with patch("src.vercel_app.requests.get", return_value=upstream_response):
+                with self.assertLogs(level=logging.ERROR) as captured:
+                    response, body = call_wsgi(
+                        "/api",
+                        operation="ai-key",
+                        method="POST",
+                        payload={"consent": True},
+                    )
+
+        self.assertEqual(response["status"], "502 Bad Gateway")
+        self.assertIn("HTTP 429", json.loads(body)["error"])
+        log_output = "\n".join(captured.output)
+        self.assertIn("upstream_http_status=429", log_output)
+        self.assertNotIn("private test value", log_output)
+
+    def test_unknown_path_is_not_misreported_as_method_not_allowed(self):
+        response, body = call_wsgi("/favicon.png")
+
+        self.assertEqual(response["status"], "404 Not Found")
+        self.assertIn("API route not found", json.loads(body)["error"])
 
     def test_invalid_search_returns_json_validation_error(self):
         response, body = call_wsgi(

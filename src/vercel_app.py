@@ -52,6 +52,10 @@ class RequestValidationError(ValueError):
     """Raised when an API request does not match the supported contract."""
 
 
+class AIServiceUnavailableError(RuntimeError):
+    """Raised when the external AI service cannot issue a usable key."""
+
+
 def parse_json_request(handler):
     raw_length = handler.headers.get("Content-Length", "")
     if not raw_length.isdecimal():
@@ -349,7 +353,7 @@ def _analyze_found_accounts(found_accounts, api_key, config, remaining_seconds):
             f"{api_base}/analyze",
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "blackbird-vercel",
+                "User-Agent": "blackbird-cli",
                 "x-api-key": api_key,
             },
             json={"prompt": ", ".join(account["name"] for account in found_accounts)},
@@ -359,17 +363,42 @@ def _analyze_found_accounts(found_accounts, api_key, config, remaining_seconds):
         if response.status_code != 200:
             from modules.utils.log import logError
 
+            logging.error(
+                "AI analysis failed (upstream_http_status=%d)",
+                response.status_code,
+            )
             logError(
                 RuntimeError(f"AI service returned HTTP {response.status_code}"),
                 "AI analysis failed",
                 config,
             )
-            return {"status": "error", "message": "The AI service could not complete the analysis."}
-        body = response.json()
-        result = body.get("data", {}).get("result") if body.get("success") else None
+            return {
+                "status": "error",
+                "message": f"The AI service could not complete the analysis (HTTP {response.status_code}).",
+            }
+        try:
+            body = response.json()
+        except ValueError:
+            logging.error(
+                "AI analysis failed (upstream_http_status=%d; response_format=invalid_json)",
+                response.status_code,
+            )
+            raise
+        data = body.get("data") if isinstance(body, dict) else None
+        result = (
+            data.get("result")
+            if isinstance(body, dict)
+            and body.get("success") is True
+            and isinstance(data, dict)
+            else None
+        )
         if not isinstance(result, dict):
             from modules.utils.log import logError
 
+            logging.error(
+                "AI analysis failed (upstream_http_status=%d; response_format=invalid_payload)",
+                response.status_code,
+            )
             logError(ValueError("AI service returned an invalid result"), "AI analysis failed", config)
             return {"status": "error", "message": "The AI service returned an invalid response."}
         config.ai_analysis = result
@@ -529,20 +558,46 @@ def issue_ai_key(handler):
     if body.get("consent") is not True:
         raise RequestValidationError("Explicit consent is required to enable AI.")
     api_base = get_ai_base_url()
+    response = None
     try:
         response = requests.get(
             f"{api_base}/generate-key",
-            headers={"User-Agent": "blackbird-vercel"},
+            headers={"User-Agent": "blackbird-cli"},
             timeout=10,
             verify=True,
         )
-        if response.status_code != 200:
-            raise RuntimeError("The AI key service is unavailable")
-        result = response.json()
-        data = result.get("data") if isinstance(result, dict) else None
+        try:
+            result = response.json()
+        except ValueError as error:
+            logging.error(
+                "AI key setup failed (upstream_http_status=%d; response_format=invalid_json)",
+                response.status_code,
+            )
+            raise RuntimeError("The AI key service returned an invalid response") from error
+
+        if not isinstance(result, dict):
+            logging.error(
+                "AI key setup failed (upstream_http_status=%d; response_format=invalid_object)",
+                response.status_code,
+            )
+            raise RuntimeError("The AI key service returned an invalid response")
+
+        service_status = result.get("status")
+        if type(service_status) is not int or service_status != 200:
+            safe_service_status = (
+                service_status
+                if type(service_status) is int and 100 <= service_status <= 599
+                else "invalid"
+            )
+            logging.error(
+                "AI key setup failed (upstream_http_status=%d; service_status=%s)",
+                response.status_code,
+                safe_service_status,
+            )
+            raise RuntimeError("The AI key service did not issue a key")
+
+        data = result.get("data")
         api_key = data.get("api_key") if isinstance(data, dict) else None
-        if not api_key and isinstance(data, dict) and result.get("status") == 200:
-            api_key = data.get("api_key")
         if (
             not isinstance(api_key, str)
             or not api_key
@@ -552,12 +607,22 @@ def issue_ai_key(handler):
                 for character in api_key
             )
         ):
+            logging.error(
+                "AI key setup failed (upstream_http_status=%d; service_status=200; response_format=invalid_key)",
+                response.status_code,
+            )
             raise RuntimeError("The AI key service returned an invalid response")
     except (requests.RequestException, ValueError, RuntimeError) as error:
         from modules.utils.log import logError
 
         logError(error, "AI key setup failed", SimpleNamespace(suppress_sensitive_logs=True))
-        raise RequestValidationError("Could not enable AI right now. Try again later.") from error
+        if response is None:
+            raise AIServiceUnavailableError(
+                "The AI key service could not be reached. Check the Vercel function logs."
+            ) from error
+        raise AIServiceUnavailableError(
+            f"The AI key service did not issue a key (HTTP {response.status_code}). Check the Vercel function logs."
+        ) from error
 
     handler.send_response(200)
     handler.send_header("Content-Type", "application/json; charset=utf-8")

@@ -29,5 +29,6 @@ Use `npx vercel dev --local` to run both the static interface and the Python API
 - Python 3.12 is selected in `.python-version`; Vercel's Python Functions runtime is currently in Beta.
 - Search requests stream newline-delimited events. Site checks stop at 270 seconds so the function can return a clearly marked partial result within Vercel's 300-second Hobby limit.
 - Generated exports and the refreshed WhatsMyName list live only in `/tmp` for the duration of a function instance. Downloads are streamed back to the browser.
+- AI key creation and analysis run from the server. The AI provider therefore sees the runtime's outbound IP, not the visitor's device IP; key creation happens only after the explicit consent shown in the interface.
 - The WhatsMyName fallback snapshot is bundled with attribution under CC BY-SA 4.0. Each search tries the upstream data source and falls back to that snapshot when unavailable; refreshes are written only to temporary storage.
 - Vercel Authentication and the GitHub repository connection are dashboard settings. The repository cannot create or verify those account-level settings.

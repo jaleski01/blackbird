@@ -20,6 +20,7 @@ from modules.whatsmyname.list_operations import checkUpdates
 from src.vercel_app import (
     PROJECT_ROOT,
     RequestValidationError,
+    _analyze_found_accounts,
     expand_usernames,
     issue_ai_key,
     normalize_identifier,
@@ -172,6 +173,49 @@ class VercelRuntimeSafetyTests(unittest.TestCase):
         handler.headers = {"Content-Length": "17", "Origin": "https://example.com", "Host": "example.com"}
         with self.assertRaises(RequestValidationError):
             issue_ai_key(handler)
+
+    def test_ai_analysis_uses_the_original_service_user_agent(self):
+        response = SimpleNamespace(
+            status_code=200,
+            json=lambda: {
+                "success": True,
+                "data": {"result": {"summary": "Synthetic test summary"}},
+            },
+        )
+        config = SimpleNamespace(suppress_sensitive_logs=True, ai_analysis=None)
+        found_accounts = [{"name": "Site One"}, {"name": "Site Two"}, {"name": "Site Three"}]
+
+        with patch("src.vercel_app.get_ai_base_url", return_value="https://ai.blackbird.run"):
+            with patch("src.vercel_app.requests.post", return_value=response) as request:
+                result = _analyze_found_accounts(
+                    found_accounts,
+                    "synthetic-test-key",
+                    config,
+                    remaining_seconds=10,
+                )
+
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["result"]["summary"], "Synthetic test summary")
+        self.assertEqual(request.call_args.kwargs["headers"]["User-Agent"], "blackbird-cli")
+
+    def test_ai_analysis_logs_safe_upstream_status(self):
+        response = SimpleNamespace(status_code=429)
+        config = SimpleNamespace(suppress_sensitive_logs=True)
+        found_accounts = [{"name": "Site One"}, {"name": "Site Two"}, {"name": "Site Three"}]
+
+        with patch("src.vercel_app.get_ai_base_url", return_value="https://ai.blackbird.run"):
+            with patch("src.vercel_app.requests.post", return_value=response):
+                with self.assertLogs(level=logging.ERROR) as captured:
+                    result = _analyze_found_accounts(
+                        found_accounts,
+                        "synthetic-test-key",
+                        config,
+                        remaining_seconds=10,
+                    )
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("HTTP 429", result["message"])
+        self.assertIn("upstream_http_status=429", "\n".join(captured.output))
 
     def test_search_streams_exports_without_persisting_them(self):
         class FakeHandler:

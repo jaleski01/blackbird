@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from src.vercel_app import (
+    AIServiceUnavailableError,
     MAX_REQUEST_BYTES,
     RequestValidationError,
     expand_usernames,
@@ -184,11 +185,11 @@ def app(environ, start_response):
             200,
             {"enabled": read_ai_cookie(context) is not None},
         )
+    if not operation:
+        return _respond(context, start_response, 404, {"error": "API route not found."})
     if method != "POST":
         context.send_header("Allow", "GET, POST")
         return _respond(context, start_response, 405, {"error": "Use GET or POST for this API route."})
-    if not operation:
-        return _respond(context, start_response, 404, {"error": "API route not found."})
 
     try:
         if operation == "ai-key":
@@ -214,6 +215,8 @@ def app(environ, start_response):
         return _stream_search(context, start_response, body, api_key)
     except RequestValidationError as error:
         return _respond(context, start_response, 400, {"error": str(error)})
+    except AIServiceUnavailableError as error:
+        return _respond(context, start_response, 502, {"error": str(error)})
     except (BrokenPipeError, ConnectionResetError):
         return []
     except Exception as error:
